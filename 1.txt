@@ -1,0 +1,152 @@
+A GPU Managed 3-Tier Memory Hierarchy
+Traditional 3-Tier CPU-orchestrated: Outsourcing the data transfer required by the GPU to the host CPU cores is extremely inefficient and cannot meet the throughput requirements of the GPU.
+2-Tier GPU-orchestrated(BaM): BaM transfers only between the GPU memory and SSDs, ignoring the CPU memory that could potentially play an important role in lowering the latency (relative to SSDs) for some pages.
+3-Tier GMT: It added CPU memory on BaM as the second layer in the hierarchy. The placement/eviction/transfer in inter-layer management is mainly coordinated directly by the GPU and supplemented by an efficient placement algorithm to ensure the efficiency of AI training.
+Compared with Gen4 SSD, Gen5 SSD has a clear advantage on GMT.
+For a single SSD, Gen5 SSD has a 36.2% improvement in training efficiency over Gen4 SSD.
+As the number of SSDs increases, the concurrency of reading and writing SSDs has been improved, so the total time has been shortened,  but the overall utilization rate of SSDs also gradually decreases as the number increases, so the gap between Gen5 SSDs and Gen4 SSDs decreases.
+
+
+
+ANNS[1] Algorithm is to search Top-K vector from the VectorDB[2] that are very close to a given query vector. They are used in many fields today, such as recommendation systems, information retrieval, data mining,  pattern recognition and RAG[3].
+But no matter what the application, ANNS faces a trade-off between cost and query latency. Most ANNS(e.g. HNSW) generate VectorDB indexes that must be stored in main memory, so they are extremely expensive when handling very large scale database. While disk-based indexes (e.g. DiskANN) reduce costs, the search performance bottleneck is focused on disk IO, so the performance improvement of a high performance disk is almost linear.
+Convert external knowledge into vectors.
+Convert user‘s query into a vector.
+First, Store the external knowledge vector to VectorDB. Each time a user queries, the query vector is inserted into the VectorDB ready for ANNS. 
+Retrieving(ANNS) relevant context from external knowledge vectors based on user’s query vectors
+The user's query and the retrieved context constitute the Retrieval-Augmented Prompt.
+Send Retrieval-Augmented Prompt to the LLM
+The LLM completes the response to the user's query by generating an answer through the prompt.
+
+
+Today, the scale of VectorDB can reach billions or even more. Thus, there is an increasing request for the hybrid ANNS solutions with small memory and inexpensive solid-state drive (SSD).
+DiskANN is a hybrid (memory+SSD) method that aims to reduce memory overhead while ensuring a high search accuracy. 
+It first conducts Product Quantization (PQ) for original high-dimensional vectors to obtain the quantized low-dimensional vectors, then stores a PQ index for quantized vectors in memory and a graph index for original vectors in SSD.
+DiskANN has been widely deployed in the industry such as Milvus VectorDB, Bing search of Microsoft and many follow-up works present variants of DiskANN to support their own scenarios.
+
+
+PQ index: Approximate search the neighbor of the query based on Quantization vector.
+
+Graph index: Sort neighbors based on the original data to find Top K.
+
+
+Milvus[4] is currently the fastest open-source vector database
+
+Milvus' goal was to support many different scenarios, and in addition to performance, they were also looking for price-performance and scalability, so they use DiskANN-based disk indexes by default. 
+Milvus’ DiskANN indexes can exert the performance of 1/3-1/2 of HNSW indexes with only 1/10 memory consumption, and can achieve ~10ms latency on tens of millions of data. Therefore, it can help users greatly reduce resource consumption in scenarios where QPS and latency are not particularly.
+
+
+VectorDBBench[5] : A Vector Database Benchmark Tool
+VectorDBBench provides unbiased vector database benchmark results for mainstream vector databases and cloud services.
+VectorDBBench’s results will show recall, maximum QPS and Serial Latency P99.
+Recall@K(more is better): Accuracy metrics of the search system. The higher the Recall, the more correct matches are returned in the query results. 
+QPS(more is better): Queries Per Second, QPS is a measure of a system's ability to process queries, with higher QPS indicating that the system is able to handle more queries per unit of time.
+Serial Latency P99(less is better): The maximum amount of time it takes for the system to process 99% of queries. The lower the P99 latency, the more stable the response of the system. 
+
+There are three types of vector search performance benchmarks in VectorDBBench, which we use to test the performance of Milvus+DiskANN.
+Search Performance Test: The VectorDB doesn’t perform filtering operations, the VectorDB’s search performance in all vectors. 
+Filtering Search Performance Test(Filter 99%): The VectorDB’s search performance in the remaining 1% of vectors after filtering out 99% of the vectors.
+Filtering Search Performance Test(Filter 1%): The VectorDB’s search performance in the remaining 99% of vectors after filtering out 1% of the vectors.
+
+
+Samsung Gen5 SSD can improve QPS by about 78% and reduce P99 latency by about 18% without loss of accuracy compared to Gen4 SSD.
+
+Samsung Gen5 SSD can improve QPS by about 65% and reduce P99 latency by about 16% with a slight increase in accuracy compared to Gen4 SSD.
+
+Samsung Gen5 SSD can improve QPS by about 77% and reduce P99 latency by about 16% with a slight increase in accuracy compared to Gen4 SSD.
+
+The large-scale ANNS tasks require higher read bandwidth SSD.
+In our tests, due to the limitation of the number of CPU cores on our server, the bandwidth utilization of Samsung Gen5 SSD is about 57% at the maximum. 
+In real scenarios, when using better CPUs to serve millions or more users, under high concurrency conditions, Samsung Gen5 SSD performance will be further utilized to improve VectorDB's search performance. 
+High-performance SSD will significantly improve the search performance of applications combined with VectorDB such as recommendation systems, Generative AI to reduce user response time.
+
+
+Existing DL optimization efforts have mostly neglected the storage subsystem, making I/O operations such as data loading, model checkpointing, and offloading the main bottlenecks of large-scale DL. 
+To address this problem, DeepSpeed has created a suite of I/O optimizations collectively called DeepNVMe. DeepNVMe can saturates available NVMe bandwidth for data transfers with GPU or CPU memory.
+DeepNVMe builds on three such solutions: 
+NVMe SSDs
+Linux Asynchronous I/O (libaio)
+NVIDIA Magnum IOTM GPUDirect® Storage(GDS)
+DeepNVMe functionality can be accessed through two abstractions: aio_handle and gds_handle. 
+The aio_handle is usable on both host and device tensors. while gds_handle works only on CUDA tensors, but is more efficient. 
+
+
+Deepspeed compared Python I/O functionality and DeepNVMe(aio_handle and gds_handle)
+The experiments were conducted on an Azure NC80adis_H100_v5 series virtual machine (VM). This VM includes two 3.5TB local NVMe devices (labelled Microsoft NVMe Direct Disk v2) that they combined into a single RAID-0 volume. The software environment included Ubuntu 22.04.4 LTS, Linux kernel 6.5.0-26-generic, Pytorch 2.4, and CUDA 12.4. 
+we observed that DeepNVMe significantly accelerates I/O operations compared to Python. DeepNVMe is 7-15x faster for loading tensor data, and 11-16x faster for writing tensor data.
+
+
+DeepNVMe usage in real-world Deep Learning applications:
+Optimizer swapper in ZeRO-Infinity.
+Gradient swapper in ZeRO-Infinity.
+Parameter swapper in ZeRO-Inference and ZeRO-Infinity.
+Simple file read and write operations.
+
+
+Zero-infinity is a novel deep learning training technology for scaling model training, it breaking the GPU memory wall for extreme scale deep learning by by leveraging the full memory capacity of a system, concurrently exploiting all heterogeneous memory (GPU, CPU, NVMe).
+
+
+Optimizer/gradient partitioning and offloading to CPU with zero-offload, model scale up 9x to 13B parameters on a single node
+
+Offloading model states to NVMe by zero-infinity, up to 1T parameters, resulting in a 700x increase in model size relative to data parallelism alone.
+
+
+In our experiment, training time decreased by up to 37% for Bloom with different parameters.
+The results show that the high performance of PCIe Gen5 SSD brings great efficiency for the training of Bloom.
+
+
+ZeRO-Inference: Democratizing massive model inference
+
+ZeRO-Inference reduces the hardware cost of inferencing massive models by using DeepNVMe to offload model weights to CPU or NVMe memory.
+ZeRO-Inference pins the entire model weights in CPU or NVMe (whichever is sufficient to accommodate the full model) and streams the weights layer-by-layer into the GPU for inference computation. After computing a layer, the outputs are retained in GPU memory as inputs for the next layer, while memory consumed by the layer weights is released for use by the next layer.
+
+
+Zero-Inference can support models with up to 15 trillion parameters for GPU inference on NVME memory.
+
+ZeRO-Inference enables single GPU inference computation of current SOTA models, since they are smaller than 15 trillion parameters.
+
+
+Deepspeed measure the generation throughput of inferencing a LLAMA3-70B model on a single NVIDIA A100-80GB with a prompt length of 512, generation length of 32, and batch size of 96.
+Deepspeed scale the number of NVMe SSDs from 1 to 4 and present the results for ZeRO-Inference with and without GDS in Figure. We make two observations from these results. 
+GDS(gds_handle) consistently provides better performance compared to the CPU memory approach(aio_handle), achieving 10-18% faster token generation.
+DeepNVMe, with and without GDS, scales generation performance with available NVMe bandwidth.
+
+
+Micron also measure the IO bandwidth of inferencing a LLAMA3-70B model on a single NVIDIA H100 and 4x Micron 9550 PCIe Gen5 NVMe SSDs.
+ZeRO-Inference IO distribution: Reads:98% Writes: 2%
+ Reads:
+Max: 5880 IOPs / 1.6GiB/s
+Avg: 1180 IOPs / 773 MiB/s
+Writes:
+1440 IOPs / 996 MiB/s
+460 IOPs / 318 MiB/s
+The current model size does not benefit from a high-performance SSD using ZeRO-Inference.
+
+In a distributed DL training, a model checkpoint state, abbreviated as a checkpoint state, maintains the information to restore a model and its state after interruptions. However, the high frequency of saving checkpoint also causes the checkpoint overhead to become a bottleneck.
+Popular DL frameworks provide standard functions for model checkpointing, such as torch.save() in PyTorch and ModelCheckpoint in TensorFlow. These functions build on traditional I/O system libraries with little optimizations for NVMe SSDs. As shown in Figure, the SSD write bandwidths are severely underutilized
+
+The main optimization leverages the multi-GB write bandwidths of NVMe devices. As shown in Figure (b), this optimization reduces checkpoint stall and overall iteration time compared to baseline. It is inspired by the observation that traditional I/O system libraries, used by existing DL frameworks are not designed to exploit the performance capability of NVMe devices. Differently, FastPersist relies on newer I/O libraries (e.g., libaio and io_uring in Linux) that are designed with asynchronous and parallelism optimizations for extracting maximum NVMe performance. Obtaining these performance gains,
+
+
+There are two data transfers involved in checkpoint writes: 
+from accelerator memory to page-locked CPU memory
+from page-locked CPU memory to NVMe memory. Serializing these two data transfers.
+As illustrated in Figure (a), limits write performance. Thus, FastPersist employs double buffering of the page-locked CPU memory to overlap the data transfers and improve write performance.
+As shown in Figure (b). In particular, FastPersist initiates the second data transfer once the first transfer is halfway done, which essentially eliminates the extra transfer latency.
+
+
+Deepspeed evaluated FastPersist on a cluster consisting of 8 DGX-2 machines connected via Infiniband. Each machine contains 16 Nvidia V100 GPUs with 32GB on-device memory, for a total of 128 GPUs. There are 8 locally attached NVMe SSDs on each machine, configured into a single RAID-0 volume, a combined peak write bandwidth of 24.8 FastPersistGB/sec. Total bandwidth is 198.4 GB/sec
+creates checkpoints significantly faster than baseline. Figure (a) shows that on 128 V100 GPUs, FastPersist achieves speedups ranging from 28x (gpt3- 13B) to 116x (gpt3-0.7B).
+Figure (b) reports that fastPersist writes checkpoints at up to 146GB/sec (gpt3-13b), which is 80% of theoretical peak on 8 nodes, and for a DP degree, FastPersist is more efficient on larger models due to larger writes per parallel writer.
+Figure (c) reports that fastPersist E2E training speedups are in the range of 1.6x (gpt3-13B) to 21.8x (gpt3- 0.7B).
+
+
+
+
+
+
+
+
+
+
+
