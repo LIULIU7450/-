@@ -1,0 +1,74 @@
+AI techs research results for storage
+DeepNVME: Improving DL Applications through I/O Optimizations 
+
+
+Existing DL optimization efforts have mostly neglected the storage subsystem, making I/O operations such as data loading, model checkpointing, and offloading the main bottlenecks of large-scale DL. 
+To address this problem, DeepSpeed has created a suite of I/O optimizations collectively called DeepNVMe. DeepNVMe can saturates available NVMe bandwidth for data transfers with GPU or CPU memory.
+DeepNVMe builds on three such solutions: 
+NVMe SSDs
+Linux Asynchronous I/O (libaio)
+NVIDIA Magnum IOTM GPUDirect® Storage(GDS)
+DeepNVMe functionality can be accessed through two abstractions: aio_handle and gds_handle. 
+The aio_handle is usable on both host and device tensors. while gds_handle works only on CUDA tensors, but is more efficient. 
+
+Using DeepNVMe for simple file reads and writes involving CPU/GPU tensors
+Deepspeed compared Python I/O and DeepNVMe(aio_handle and gds_handle)
+Experimental environment: Azure NC80adis_H100_v5 series virtual machine (VM). ). This VM includes two 3.5TB local NVMe devices (labelled Microsoft NVMe Direct Disk v2) that they combined into a single RAID-0 volume. 
+we observed that DeepNVMe significantly accelerates I/O operations compared to Python. DeepNVMe is 7-15x faster for loading tensor data, and 11-16x faster for writing tensor data.
+
+
+ZeRO-Infinity: Breaking the GPU Memory Wall for Extreme Scale Deep Learning
+DeepNVMe usage in real-world Deep Learning applications:
+Optimizer swapper: ZeRO-Infinity
+Gradient swapper: ZeRO-Infinity.
+Parameter swapper: ZeRO-Inference and ZeRO-Infinity.
+Simple file read and write operations.
+
+Zero-infinity is a novel deep learning training technology for scaling model training, it breaking the GPU memory wall for extreme scale deep learning by by leveraging the full memory capacity of a system, concurrently exploiting all heterogeneous memory (GPU, CPU, NVMe).
+Optimizer/gradient partitioning and offloading to CPU with zero-offload, model scale up 9x to 13B parameters on a single node
+
+Offloading model states to NVMe by zero-infinity, up to 1T parameters, resulting in a 700x increase in model size relative to data parallelism alone.
+
+
+Model training workflow and benchmark result of ZeRO-Infinity
+In our ZeRO-Infinity benchmark of Bloom with different parameters:
+PM1743 can be increased by up to 37% compared to PM1733.
+The results show that the high performance of PCIe Gen5 SSD brings great efficiency for the training of LLM.
+
+
+DeepNVME: Use aio_handle to transfer data 
+
+
+ZeRO-Inference: Large models achieve low memory inference optimization 
+
+ZeRO-Inference reduces the hardware cost of inferencing massive models by using DeepNVMe to offload model weights to CPU or NVMe memory.
+ZeRO-Inference pins the entire model weights in CPU or NVMe and streams the weights layer-by-layer into the GPU for inference computation. After computing a layer, the outputs are retained in GPU memory as inputs for the next layer, while memory consumed by the layer weights is released for use by the next layer.
+
+Zero-Inference can support models with up to 15 trillion parameters for GPU inference on NVME memory.
+
+ZeRO-Inference enables single GPU inference computation of current SOTA models, since they are smaller than 15 trillion parameters.
+
+Insight of Offload Training and Inferencing
+
+SOTA models fine-tuning and inferencing are expensive to deploy
+
+DeepSeek R1 is the most popular LLM at the moment. It only used $550w to train a model with similar performance to OpenAI O1($500 million), and the inference cost is only 1/30 of OpenAI O1.
+However, the maximum size of Deepseek R1 is as high as 671B, and we still need a lot of resources to fine-tune and train DeepSeek R1.
+As shown in the following table, this is expensive for users who need to deploy a model on-premises. And using cloud servers to train and inference models is also at risk of data breaches.
+If we use ZeRO-infinity and ZeRO-inference or similar technologies combined with Samsung's high-performance storage devices, we can fine-tune and inference a larger model at less expense to get more accurate response.
+
+
+FastPersist: Accelerating Model Checkpointing in Deep Learning
+
+In a distributed DL training, A high frequency of save checkpoint is essential. Saving Checkpoint has become a major bottleneck for distributed training.
+Such as torch.save() in PyTorch and ModelCheckpoint in TensorFlow. These popular DL frameworks’ save checkpoint functions build on traditional I/O system libraries with little optimizations for NVMe SSDs. As shown in Figure b, the SSD write bandwidths are severely underutilized.
+FastPersist uses the DeepNVME module to quickly save checkpoint and extends a new functionality. It turns the need to write serialized tensors multiple times to create a checkpoint into a single write.
+
+FastPersist: SSD write bandwidth can be fully utilized
+
+
+Experimental environment: 8*DGX-2 machines(16*V100 GPU, 8*NVME SSD configured into a single RAID-0 volume), total SSD bandwidth is 198.4 GB/sec
+Figure(a) shows that FastPersisit has excellent checkpoint speedup on models of different sizes compared to torch.save().
+Figure (b) shows that FastPersist writes checkpoints at up to 146GB/sec (gpt3-13b), which is 80% of theoretical SSD peak on 8 nodes.
+FastPersist is more efficient on larger models due to larger writes per parallel writer.
+
